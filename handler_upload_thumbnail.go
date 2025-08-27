@@ -1,10 +1,13 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -31,37 +34,45 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	}
 
 
-	//fmt.Println("uploading thumbnail for video", videoID, "by user", userID)
-
 	// TODO: implement the upload here
 	const maxMemory = 10 << 20
 	r.ParseMultipartForm(maxMemory)
-	file,_,err := r.FormFile("thumbnail")
+	file,fileHeader,err := r.FormFile("thumbnail")
 	if err != nil{
 		respondWithError(w,http.StatusBadRequest,"Unable to parse form file",err)
 		return
 	}
 	defer file.Close()
 
-	fileInfo,err := io.ReadAll(file)
-	if err != nil{
-		respondWithError(w,http.StatusInternalServerError,"Failed to read from file",err)
-		return
-	}
 	videoMeta,err := cfg.db.GetVideo(videoID)
 	if userID != videoMeta.UserID{
 		respondWithError(w,http.StatusUnauthorized,"Video is not the users",err)
 		return
 	}
-	newThumbnail := thumbnail{
-		data: fileInfo,
-		mediaType: "image/png",
+	
+	contentType := fileHeader.Header.Get("Content-Type")
+	parts := strings.Split(contentType, "/")
+
+	if !(strings.HasPrefix(contentType, "image/")){
+		respondWithError(w,http.StatusBadRequest,"Not an image",err)
+		return
 	}
 
-	encodedbase64Image := base64.StdEncoding.EncodeToString(newThumbnail.data)
-	imageUrl := fmt.Sprintf("data:%s;base64,%s",newThumbnail.mediaType,encodedbase64Image)
+	imageUrl := fmt.Sprintf("%s.%s",videoID,parts[1])
+	assetsPath := filepath.Join(cfg.assetsRoot,imageUrl)
 	
-	videoMeta.ThumbnailURL = &imageUrl
+	fileCreated,errFile := os.Create(assetsPath)
+	if errFile != nil{
+		respondWithError(w,http.StatusInternalServerError,"Error creating file",err)
+		return
+	}
+	if _, err := io.Copy(fileCreated,file);err != nil{
+		log.Fatal(err)
+	}
+
+	thumbnailUrl := fmt.Sprintf("http://localhost:%s/assets/%s",cfg.port,imageUrl)
+	
+	videoMeta.ThumbnailURL = &thumbnailUrl
 
 	cfg.db.UpdateVideo(videoMeta)
 

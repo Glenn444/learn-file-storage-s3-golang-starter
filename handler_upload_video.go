@@ -73,6 +73,8 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		log.Fatal(err)
 	}
 
+	
+
 	key := make([]byte, 16)
 	rand.Read(key)
 

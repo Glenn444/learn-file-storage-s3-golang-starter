@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math"
 	"os/exec"
 )
@@ -19,14 +18,14 @@ type Stream struct{
 }
 
 func getVideoAspectRatio(filePath string) (string,error)  {
+	fmt.Printf("filepath from aspect: %s\n",filePath)
 	cmd := exec.Command("ffprobe","-v","error","-print_format","json","-show_streams",filePath)
-	
+
 	var b bytes.Buffer
 	cmd.Stdout = &b
 
 	err := cmd.Run()
 	if err != nil{
-		log.Fatal(err)
 		return  "",fmt.Errorf("failed to run ffprobe: %w",err)
 	}
 

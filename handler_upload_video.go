@@ -4,9 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"io"
-	"log"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -61,33 +60,47 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	fileCreated, errFile := os.CreateTemp(".", "tubely-upload.mp4")
+	tempfile, errFile := os.CreateTemp("", "tubely-upload.mp4")
 	if errFile != nil {
 		respondWithError(w, http.StatusInternalServerError, "error creating tempfile", err)
 		return
 	}
-	defer os.Remove("tubely-upload.mp4")
-	defer fileCreated.Close()
+	defer os.Remove(tempfile.Name())
+	defer tempfile.Close()
 
-	if _, err := io.Copy(fileCreated, file); err != nil {
-		log.Fatal(err)
+	if _, err := io.Copy(tempfile, file); err != nil {
+		respondWithError(w,http.StatusInternalServerError,"error occurred copying the files",err)
+		return
 	}
 
 	
-
 	key := make([]byte, 16)
 	rand.Read(key)
 
 	hexKey := hex.EncodeToString(key)
 
 	videoKey := fmt.Sprintf("%s.%s", hexKey, parts[1])
-	fmt.Printf("hex key: %v\n", videoKey)
-	fileCreated.Seek(0, io.SeekStart) //allows us to read the file again from beginning
+	
+	_,err = tempfile.Seek(0, io.SeekStart) //allows us to read the file again from beginning
+	if err != nil{
+		respondWithError(w,http.StatusInternalServerError,"could not reset file pointer",err)
+		return
+	}
 
+	
+	aspectRatio,err := getVideoAspectRatio(tempfile.Name())
+
+	if err != nil{
+		
+		respondWithError(w,http.StatusInternalServerError,"error occurred getting aspect ratio",err)
+		return
+	}
+
+	fmt.Printf("aspect ratio: %s\n",aspectRatio)
 	_, err = cfg.s3Client.PutObject(context.Background(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &videoKey,
-		Body:        fileCreated,
+		Body:        tempfile,
 		ContentType: &contentType,
 	})
 
@@ -97,7 +110,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 
 	videoUrl := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, videoKey)
-	fmt.Printf("videoUrl: %s\n", videoUrl)
+	
 	videoMeta.VideoURL = &videoUrl
 	cfg.db.UpdateVideo(videoMeta)
 

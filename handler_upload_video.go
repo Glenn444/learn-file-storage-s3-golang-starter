@@ -4,10 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"io"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -87,19 +88,29 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	
+	directory := ""
 	aspectRatio,err := getVideoAspectRatio(tempfile.Name())
-
 	if err != nil{
 		
 		respondWithError(w,http.StatusInternalServerError,"error occurred getting aspect ratio",err)
 		return
 	}
 
+	switch aspectRatio {
+	case "16:9":
+		directory = "landscape"
+	case "9:16":
+		directory = "portrait"
+	default:
+		directory = "other"
+	}
+
+	newVideoKey := path.Join(directory,videoKey)
+
 	fmt.Printf("aspect ratio: %s\n",aspectRatio)
 	_, err = cfg.s3Client.PutObject(context.Background(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
-		Key:         &videoKey,
+		Key:         &newVideoKey,
 		Body:        tempfile,
 		ContentType: &contentType,
 	})
@@ -109,7 +120,8 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	videoUrl := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, videoKey)
+	videoUrl := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, newVideoKey)
+	fmt.Printf("videoUrl: %s\n",videoUrl)
 	
 	videoMeta.VideoURL = &videoUrl
 	cfg.db.UpdateVideo(videoMeta)

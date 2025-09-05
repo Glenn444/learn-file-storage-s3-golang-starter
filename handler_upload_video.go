@@ -106,12 +106,27 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 
 	newVideoKey := path.Join(directory,videoKey)
+	processedFilePath,err := processVideoForFastStart(tempfile.Name())
+	if err != nil{
+		respondWithError(w,http.StatusInternalServerError,"Error Processing video for faster start",err)
+		return
+	}
+	defer os.Remove(processedFilePath)
 
-	fmt.Printf("aspect ratio: %s\n",aspectRatio)
+	processedFile,err := os.Open(processedFilePath)
+
+	if err != nil{
+		respondWithError(w,http.StatusInternalServerError,"Could not open processed file",err)
+		return
+	}
+
+	defer processedFile.Close()
+
+
 	_, err = cfg.s3Client.PutObject(context.Background(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &newVideoKey,
-		Body:        tempfile,
+		Body:        processedFile,
 		ContentType: &contentType,
 	})
 
@@ -121,7 +136,6 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 
 	videoUrl := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, newVideoKey)
-	fmt.Printf("videoUrl: %s\n",videoUrl)
 	
 	videoMeta.VideoURL = &videoUrl
 	cfg.db.UpdateVideo(videoMeta)
